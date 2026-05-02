@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="EQ/FX Pricer" />
+  <title>EQ/FX Hybrid Pricer</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@stlite/browser@0.80.5/build/stlite.css" />
+  <style>
+    body, html { margin: 0; padding: 0; height: 100%; }
+    #root { height: 100vh; }
+    .loading {
+      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+      display: flex; align-items: center; justify-content: center;
+      flex-direction: column; font-family: -apple-system, sans-serif;
+      background: #fff; z-index: 9999;
+    }
+    .loading h2 { color: #1f77b4; }
+    .loading p { color: #666; max-width: 400px; text-align: center; padding: 0 20px; }
+    .spinner {
+      border: 3px solid #f3f3f3; border-top: 3px solid #1f77b4;
+      border-radius: 50%; width: 40px; height: 40px;
+      animation: spin 1s linear infinite; margin: 20px;
+    }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div class="loading" id="loading">
+    <div class="spinner"></div>
+    <h2>Loading pricer...</h2>
+    <p>First load downloads Python + numpy + scipy (~50MB).
+       Takes 30-60 seconds. Subsequent loads use the browser cache.</p>
+  </div>
+  <div id="root"></div>
+
+  <script type="module">
+    import { mount } from "https://cdn.jsdelivr.net/npm/@stlite/browser@0.80.5/build/stlite.js";
+
+    // Fetch the app source and embedded pricer module, then mount.
+    // We inline the pricer here so stlite can find it as a module.
+    const appPy = await fetch("./app.py").then(r => r.text());
+    const pricerPy = await fetch("./hybrid_pricer.py").then(r => r.text());
+
+    mount(
+      {
+        requirements: ["numpy", "scipy", "matplotlib"],
+        entrypoint: "app.py",
+        files: {
+          "app.py": appPy,
+          "hybrid_pricer.py": pricerPy,
+        },
+      },
+      document.getElementById("root")
+    );
+
+    // Hide loading overlay once stlite renders something
+    const observer = new MutationObserver(() => {
+      const root = document.getElementById("root");
+      if (root && root.children.length > 0 && root.querySelector("iframe, .stApp")) {
+        document.getElementById("loading").style.display = "none";
+        observer.disconnect();
+      }
+    });
+    observer.observe(document.getElementById("root"), { childList: true, subtree: true });
+  </script>
+</body>
+</html>

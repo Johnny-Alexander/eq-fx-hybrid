@@ -28,7 +28,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
-__all__ = ["ConditionLeg", "FXCondition"]
+__all__ = ["ConditionLeg", "FXCondition", "RateCondition",
+           "ShiftedLognormalRateCondition"]
 
 
 class ConditionLeg(ABC):
@@ -112,3 +113,125 @@ class FXCondition(ConditionLeg):
         """Terminal FX level for standard normal draws ``z`` (for MC)."""
         return self.X0 * np.exp((self.mu() - 0.5 * self.sig_X ** 2) * T
                                 + self.sig_X * np.sqrt(T) * z)
+
+
+# -- rates ---------------------------------------------------------------
+#
+# Units, because this is where hybrids go wrong quietly: rates and barriers
+# are decimals (0.04 = 4%), and normal vol is in absolute rate units per
+# sqrt(year) (0.0080 = 80bp). The guards below reject the common slips --
+# passing 4 for 4%, or 80 for 80bp -- rather than returning a plausible
+# looking wrong number.
+
+_MAX_PLAUSIBLE_RATE = 1.0      # 100%
+_MAX_PLAUSIBLE_NORMAL_VOL = 0.5  # 5000bp/yr
+
+
+def _check_rate_units(**values: float) -> None:
+    for name, v in values.items():
+        if abs(v) > _MAX_PLAUSIBLE_RATE:
+            raise ValueError(
+                f"{name}={v} looks like a percentage, not a decimal rate. "
+                f"Pass 0.04 for 4%, not 4.")
+
+
+@dataclass
+class RateCondition(ConditionLeg):
+    """Normal (Bachelier) rate, e.g. a 10y CMS fixing.
+
+    Payoff condition: ``1{R_T > B}`` (or ``<``, via the product's direction
+    argument), where R is the rate observed at T -- typically a CMS rate.
+
+    The standardised threshold has no log and no ``-0.5 sig^2 T`` term::
+
+        h = (R_adj - B) / (sig_R sqrt(T))
+
+    which is the *only* thing separating this from :class:`FXCondition`. The
+    equity-measure shift is inherited unchanged, because it acts on the
+    standard normal driving the condition rather than on the rate itself.
+    Verified against Monte Carlo across call/put x above/below x rho in
+    [-0.6, 0.6]; see tests/test_rates.py.
+
+    Bachelier is the default because it is the post-2015 market convention
+    for swaption and CMS vol, and it handles zero and negative rates without
+    a displacement. Use :class:`ShiftedLognormalRateCondition` if your vols
+    are quoted shifted-lognormal.
+
+    Attributes
+    ----------
+    R_adj : convexity-adjusted forward rate under Q^T.
+
+            NOT the plain forward swap rate. A CMS rate is not a martingale
+            under the T-forward measure, so E^T[R_T] exceeds the forward swap
+            rate by a convexity adjustment; there is a further adjustment if
+            the fixing and payment dates differ. Computing that adjustment
+            (Hagan-style static replication off a swaption cube) is not yet
+            implemented -- this leg takes the adjusted rate as an input, and
+            passing the unadjusted forward will systematically misprice.
+    B     : barrier level, as a decimal (0.04 = 4%)
+    sig_R : normal/absolute volatility per sqrt(year) (0.0080 = 80bp)
+    """
+
+    R_adj: float
+    B: float
+    sig_R: float
+
+    label: str = "rate"
+
+    def __post_init__(self) -> None:
+        _check_rate_units(R_adj=self.R_adj, B=self.B)
+        if not 0 < self.sig_R <= _MAX_PLAUSIBLE_NORMAL_VOL:
+            raise ValueError(
+                f"sig_R={self.sig_R} is not a plausible normal vol. Pass "
+                f"absolute rate units per sqrt(year): 0.0080 for 80bp, not 80.")
+
+    def h(self, T: float) -> float:
+        return (self.R_adj - self.B) / (self.sig_R * np.sqrt(T))
+
+    def sigma(self) -> float:
+        return self.sig_R
+
+    def simulate(self, z: np.ndarray, T: float) -> np.ndarray:
+        return self.R_adj + self.sig_R * np.sqrt(T) * z
+
+
+@dataclass
+class ShiftedLognormalRateCondition(ConditionLeg):
+    """Shifted-lognormal rate: ``R + a`` is lognormal, for displacement ``a``.
+
+    Reduces to plain lognormal Black when ``shift = 0``, and permits rates
+    down to ``-shift``. Here ``sig_R`` is a *relative* vol on the displaced
+    rate, so it is not interchangeable with :class:`RateCondition`'s.
+
+        h = [ln((R_adj + a)/(B + a)) - 0.5 sig_R^2 T] / (sig_R sqrt(T))
+    """
+
+    R_adj: float
+    B: float
+    sig_R: float
+    shift: float = 0.0
+
+    label: str = "rate"
+
+    def __post_init__(self) -> None:
+        _check_rate_units(R_adj=self.R_adj, B=self.B, shift=self.shift)
+        if self.R_adj + self.shift <= 0 or self.B + self.shift <= 0:
+            raise ValueError(
+                f"shift={self.shift} must make both the rate and the barrier "
+                f"positive: R_adj+shift={self.R_adj + self.shift}, "
+                f"B+shift={self.B + self.shift}")
+        if self.sig_R <= 0:
+            raise ValueError(f"sig_R must be positive, got {self.sig_R}")
+
+    def h(self, T: float) -> float:
+        return ((np.log((self.R_adj + self.shift) / (self.B + self.shift))
+                 - 0.5 * self.sig_R ** 2 * T)
+                / (self.sig_R * np.sqrt(T)))
+
+    def sigma(self) -> float:
+        return self.sig_R
+
+    def simulate(self, z: np.ndarray, T: float) -> np.ndarray:
+        displaced = (self.R_adj + self.shift) * np.exp(
+            -0.5 * self.sig_R ** 2 * T + self.sig_R * np.sqrt(T) * z)
+        return displaced - self.shift

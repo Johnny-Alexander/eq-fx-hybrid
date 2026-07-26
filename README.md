@@ -1,6 +1,8 @@
-# EQ/FX Hybrid Option Pricer
+# Cross-Asset Hybrid Option Pricer
 
-Closed-form bivariate Black–Scholes pricing and risk analysis for two cross-asset structures linking SPX and USDJPY:
+Closed-form bivariate Black–Scholes pricing and risk analysis for two cross-asset structures — an equity payoff gated by a condition on **another asset class**. The conditioning observable is pluggable: **FX** (`USDJPY > 160`) and **rates** (`CMS10 > 4%`) share one closed form.
+
+Taking SPX and USDJPY as the worked example:
 
 1. **Conditional European** — a vanilla SPX call/put gated by a USDJPY barrier:
    $$V_T = \max\!\big(\eta_S(S_T-K),0\big) \cdot \mathbf{1}\{\eta_X(X_T-B)>0\}$$
@@ -113,7 +115,7 @@ hybrid-pricer/
 │   ├── hybrid/                      # the pricer, split by responsibility
 │   │   ├── bivariate.py             #   shared normal machinery
 │   │   ├── equity.py                #   equity leg: forward, d1/d2, vanilla
-│   │   ├── conditions.py            #   pluggable conditioning leg (FX today)
+│   │   ├── conditions.py            #   pluggable conditioning legs (FX, rates)
 │   │   ├── products.py              #   conditional european, double digital
 │   │   └── greeks.py                #   generic bump-and-revalue
 │   ├── hybrid_pricer.py             # compatibility shim over src/hybrid
@@ -126,7 +128,8 @@ hybrid-pricer/
 ├── docs/                            # GitHub Pages (stlite/Pyodide) deploy
 ├── tests/
 │   ├── test_hybrid.py               # legacy API: closed form vs MC, identities
-│   └── test_hybrid_package.py       # layered API + abstraction invariants
+│   ├── test_hybrid_package.py       # layered API + abstraction invariants
+│   └── test_rates.py                # EQ/IR: closed form vs MC, unit guards
 ├── requirements.txt
 └── LICENSE
 ```
@@ -168,6 +171,26 @@ h = (log(X0/B) + (mu_X - 0.5*sig_X**2)*T) / (sig_X*sqrt(T))
 # CMS rate, normal/Bachelier — no log, no -0.5*sig^2*T
 h = (R_adj - B) / (sig_R*sqrt(T))
 ```
+
+So an SPX call contingent on `CMS10 > 4%` is the same call with a different leg:
+
+```python
+from src.hybrid import EquityLeg, RateCondition, conditional_european
+
+eq  = EquityLeg.from_market(F=7647.0, K=7000.0, P0T=0.9139, sig_S=0.16, T=2.0)
+cms = RateCondition(R_adj=0.0415, B=0.04, sig_R=0.0080)  # 80bp/yr normal vol
+
+conditional_european(eq, cms, T=2.0, rho=-0.30)["price"]   # 389.28
+```
+
+Rates default to **normal/Bachelier** (post-2015 market convention, handles
+negative rates); `ShiftedLognormalRateCondition` covers shifted-lognormal
+quoting. Units are guarded — passing `4` for 4%, or `80` for 80bp, raises
+rather than returning a plausible wrong number.
+
+> **Not yet implemented:** the CMS **convexity adjustment**. `R_adj` is taken
+> as an input, and a CMS rate is not a martingale under the T-forward measure,
+> so passing the plain forward swap rate will systematically misprice.
 
 ---
 

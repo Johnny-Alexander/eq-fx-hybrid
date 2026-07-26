@@ -13,20 +13,22 @@ The signs $\eta_S, \eta_X \in \{+1,-1\}$ select between calls/puts and above/bel
 
 ---
 
-## Start here — the two notebooks
+## Start here — the four notebooks
 
-The repo is built around two self-contained walkthroughs:
+The repo is built around four self-contained walkthroughs — the same two structures, once with an FX condition and once with a rates condition:
 
 | Notebook | Topic |
 |---|---|
-| [`notebooks/conditional_european.ipynb`](notebooks/conditional_european.ipynb) | Vanilla call/put × FX above/below barrier. Closed-form pricing for all 4 variants, FX forwards (with the quanto correction), Greeks across variants, deep dive on SPX delta / FX delta / SPX vega / FX vega / cega for the canonical `call × X > B` case, and a scenario walkthrough showing why static delta-hedging fails on a 6-yen FX shock. |
-| [`notebooks/digital.ipynb`](notebooks/digital.ipynb) | Joint cash-or-nothing double digital. All 4 sign partitions priced; identity check that the four sum to PV(notional); cega sign-flip across variants; gamma concentration near the strike. |
+| [`eqfx_conditional_european.ipynb`](notebooks/eqfx_conditional_european.ipynb) | Vanilla call/put × FX above/below barrier. Closed-form pricing for all 4 variants, FX forwards (with the quanto correction), Greeks across variants, deep dive on SPX delta / FX delta / SPX vega / FX vega / cega for the canonical `call × X > B` case, and a scenario walkthrough showing why static delta-hedging fails on a 6-yen FX shock. |
+| [`eqfx_digital.ipynb`](notebooks/eqfx_digital.ipynb) | Joint cash-or-nothing double digital on SPX × USDJPY. All 4 sign partitions priced; identity check that the four sum to PV(notional); cega sign-flip across variants; gamma concentration near the strike. |
+| [`eqir_conditional_european.ipynb`](notebooks/eqir_conditional_european.ipynb) | Vanilla call/put × CMS10 above/below barrier. What changes versus EQ/FX and what doesn't; the CMS convexity adjustment and what ignoring it costs; DV01 peaking at the barrier; rate vega changing sign around it; correlation dominating the premium. |
+| [`eqir_digital.ipynb`](notebooks/eqir_digital.ipynb) | Joint double digital on SPX × CMS10. The purest correlation trade in the set — no numeraire change, no optionality on level. Quadrant partition identity, cega cancelling in pairs, and why convexity bites harder here than in the conditional european. |
 
-Trade attributes are defined inline at the top of each notebook — no external config to track. The pricer code stays in `src/hybrid_pricer.py`.
+Trade attributes are defined inline at the top of each notebook — no external config to track. The pricer lives in `src/hybrid/`.
 
 ```bash
 pip install -r requirements.txt
-jupyter notebook notebooks/conditional_european.ipynb
+jupyter notebook notebooks/eqfx_conditional_european.ipynb
 ```
 
 ---
@@ -109,8 +111,10 @@ A "perfectly SPX-delta-hedged" position can lose 25%+ of MTM on a single liquid 
 ```
 hybrid-pricer/
 ├── notebooks/
-│   ├── conditional_european.ipynb   # vanilla x FX-indicator, 4 variants
-│   └── digital.ipynb                # joint cash-or-nothing, 4 variants
+│   ├── eqfx_conditional_european.ipynb  # vanilla x FX-indicator, 4 variants
+│   ├── eqfx_digital.ipynb               # joint cash-or-nothing, SPX x USDJPY
+│   ├── eqir_conditional_european.ipynb  # vanilla x CMS-indicator, 4 variants
+│   └── eqir_digital.ipynb               # joint cash-or-nothing, SPX x CMS10
 ├── src/
 │   ├── hybrid/                      # the pricer, split by responsibility
 │   │   ├── bivariate.py             #   shared normal machinery
@@ -222,13 +226,17 @@ these products condition on the CMS *fixing* and settle at the same date.
 ```bash
 pip install -r requirements.txt
 
-# The two notebooks (recommended starting point)
-jupyter notebook notebooks/conditional_european.ipynb
-jupyter notebook notebooks/digital.ipynb
+# The four notebooks (recommended starting point)
+jupyter notebook notebooks/eqfx_conditional_european.ipynb
+jupyter notebook notebooks/eqfx_digital.ipynb
+jupyter notebook notebooks/eqir_conditional_european.ipynb
+jupyter notebook notebooks/eqir_digital.ipynb
 
 # Standalone scripts (regenerate figures/)
 python scripts/run_all.py
-python tests/test_hybrid.py
+
+# Tests
+python -m pytest tests/ -q
 
 # Streamlit app
 ./run_app.sh

@@ -1,7 +1,7 @@
 """Default example trades used across the analysis scripts and notebooks."""
 import numpy as np
 
-from src.hybrid import EquityLeg, RateCondition  # noqa: F401
+from src.hybrid import EQIRTrade
 from src.hybrid_pricer import HybridInputs
 
 NOTIONAL = 100e6  # $100mm
@@ -30,20 +30,20 @@ EXAMPLE_TRADE = HybridInputs(
 # {SPX up, rates up} rarer and so cheapens the structure relative to rho=0.
 
 EQIR_T = 2.0
-EQIR_EQUITY = EquityLeg.from_market(
+EQIR_TRADE = EQIRTrade(
     F=7200.0 * np.exp((0.045 - 0.015) * EQIR_T),  # SPX forward to 2y
     K=7000.0,
     P0T=np.exp(-0.045 * EQIR_T),                  # USD discount factor
     sig_S=0.16,                                   # vol of the FORWARD
-    T=EQIR_T,
-)
-EQIR_FORWARD_SWAP = 0.0410  # unadjusted 10y forward swap rate, 2y forward
-EQIR_CONDITION = RateCondition.from_forward_swap(
-    R_0=EQIR_FORWARD_SWAP,
+    R_0=0.0410,     # unadjusted 10y forward swap rate, 2y forward
     B=0.04,         # 4% barrier
     sig_R=0.0080,   # 80bp/yr normal vol
     T=EQIR_T,
+    rho=-0.30,      # SPX / CMS10 correlation
     tenor=10,       # CMS10
     freq=2,         # semiannual swap
-)  # -> R_adj ~= 4.1445%, i.e. +4.45bp of convexity
-EQIR_RHO = -0.30    # SPX / CMS10 correlation
+)  # convexity lifts R_0 to R_adj ~= 4.1445%, i.e. +4.45bp
+
+# Leg-level views of the same trade, for code that wants them directly.
+EQIR_EQUITY, EQIR_CONDITION = EQIR_TRADE.legs()
+EQIR_RHO = EQIR_TRADE.rho

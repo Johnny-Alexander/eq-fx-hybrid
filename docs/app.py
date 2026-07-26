@@ -1,9 +1,9 @@
 """Streamlit app for EQ/FX hybrid and double-digital pricing.
 
-stlite-compatible version: imports hybrid_pricer directly (it sits next to
-this file in the docs/ directory for GitHub Pages deployment).
-
-Same logic as ../app/app.py but with flattened imports.
+stlite-compatible version for the GitHub Pages deployment. The pricer package
+is mirrored into docs/src/ by sync_docs.sh and mounted by index.html at the
+same import paths the repo uses, so the imports below match ../app/app.py
+exactly rather than being flattened.
 """
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ import streamlit as st
 from dataclasses import replace
 from scipy.stats import norm
 
-from hybrid_pricer import HybridInputs, price_hybrid_call, bivariate_normal_cdf
+from src.hybrid_pricer import HybridInputs, price_hybrid_call, bivariate_normal_cdf
 
 plt.rcParams["text.parse_math"] = False
 

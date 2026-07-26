@@ -38,19 +38,38 @@
   <script type="module">
     import { mount } from "https://cdn.jsdelivr.net/npm/@stlite/browser@0.80.5/build/stlite.js";
 
-    // Fetch the app source and embedded pricer module, then mount.
-    // We inline the pricer here so stlite can find it as a module.
-    const appPy = await fetch("./app.py").then(r => r.text());
-    const pricerPy = await fetch("./hybrid_pricer.py").then(r => r.text());
+    // Fetch the app source plus the pricer package, and mount them into
+    // stlite's virtual filesystem under the same paths the repo uses, so
+    // docs/app.py can share its imports with app/app.py verbatim.
+    //
+    // Keep this list in step with sync_docs.sh -- it is the one place the
+    // package layout is spelled out twice.
+    const modules = [
+      "src/__init__.py",
+      "src/hybrid_pricer.py",
+      "src/hybrid/__init__.py",
+      "src/hybrid/bivariate.py",
+      "src/hybrid/cms.py",
+      "src/hybrid/conditions.py",
+      "src/hybrid/eqir.py",
+      "src/hybrid/equity.py",
+      "src/hybrid/greeks.py",
+      "src/hybrid/products.py",
+    ];
+
+    const [appPy, ...sources] = await Promise.all([
+      fetch("./app.py").then(r => r.text()),
+      ...modules.map(m => fetch("./" + m).then(r => r.text())),
+    ]);
+
+    const files = { "app.py": appPy };
+    modules.forEach((m, i) => { files[m] = sources[i]; });
 
     mount(
       {
         requirements: ["numpy", "scipy", "matplotlib"],
         entrypoint: "app.py",
-        files: {
-          "app.py": appPy,
-          "hybrid_pricer.py": pricerPy,
-        },
+        files,
       },
       document.getElementById("root")
     );

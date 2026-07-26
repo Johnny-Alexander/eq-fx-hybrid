@@ -117,21 +117,24 @@ hybrid-pricer/
 │   │   ├── equity.py                #   equity leg: forward, d1/d2, vanilla
 │   │   ├── conditions.py            #   pluggable conditioning legs (FX, rates)
 │   │   ├── cms.py                   #   CMS convexity adjustment
+│   │   ├── eqir.py                  #   EQ/IR trade + rates-convention risk
 │   │   ├── products.py              #   conditional european, double digital
 │   │   └── greeks.py                #   generic bump-and-revalue
 │   ├── hybrid_pricer.py             # compatibility shim over src/hybrid
 │   └── trade_config.py              # example trade for scripts/tests
-├── scripts/                         # 7 standalone analysis scripts -> figures/
+├── scripts/                         # 8 standalone analysis scripts -> figures/
 ├── figures/                         # pre-generated PNGs from scripts/
 ├── app/
 │   ├── app.py                       # Streamlit pricer (mobile-friendly)
 │   └── MOBILE_DEPLOY.md
 ├── docs/                            # GitHub Pages (stlite/Pyodide) deploy
+│   └── src/                         #   mirror of src/, synced by sync_docs.sh
 ├── tests/
 │   ├── test_hybrid.py               # legacy API: closed form vs MC, identities
 │   ├── test_hybrid_package.py       # layered API + abstraction invariants
 │   ├── test_rates.py                # EQ/IR: closed form vs MC, unit guards
-│   └── test_cms.py                  # convexity: derivatives, scaling, sign
+│   ├── test_cms.py                  # convexity: derivatives, scaling, sign
+│   └── test_eqir.py                 # EQ/IR trade container + DV01 conventions
 ├── requirements.txt
 └── LICENSE
 ```

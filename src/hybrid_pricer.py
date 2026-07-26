@@ -104,10 +104,16 @@ class HybridInputs:
     rho: float
 
     def legs(self) -> tuple[EquityLeg, FXCondition]:
-        """Split the flat inputs into the equity and conditioning legs."""
+        """Split the flat inputs into the equity and conditioning legs.
+
+        Uses the spot-implied constructor, so this flat API keeps its
+        original constant-rate convention. Build an
+        :meth:`~src.hybrid.EquityLeg.from_market` leg directly to price off
+        an observed forward and discount factor instead.
+        """
         return (
-            EquityLeg(S0=self.S0, K=self.K, q=self.q, r_d=self.r_d,
-                      sig_S=self.sig_S),
+            EquityLeg.from_spot(S0=self.S0, K=self.K, q=self.q, r_d=self.r_d,
+                                sig_S=self.sig_S),
             FXCondition(X0=self.X0, B=self.B, r_d=self.r_d, r_f=self.r_f,
                         sig_X=self.sig_X),
         )

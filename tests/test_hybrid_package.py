@@ -13,7 +13,7 @@ import numpy as np
 import pytest
 
 from src.hybrid import (EquityLeg, FXCondition, conditional_european,
-                        conditional_european_mc, double_digital)
+                        conditional_european_mc, double_digital)  # noqa: F401
 from src.hybrid_pricer import price_hybrid, price_double_digital
 from src.trade_config import EXAMPLE_TRADE as p
 
@@ -82,6 +82,41 @@ def test_double_digital_matches_shim():
         layered = double_digital(eq, fx, p.T, p.rho, 1.0, ed, cd)
         assert legacy["price"] == pytest.approx(layered["price"], rel=1e-12)
         assert legacy["P_fx"] == pytest.approx(layered["P_condition"], rel=1e-12)
+
+
+def test_market_and_spot_constructors_agree():
+    """Feeding from_market the forward and discount factor that from_spot
+    implies must reproduce the same price -- the reparameterisation is an
+    identity, not a model change."""
+    eq_spot, fx = p.legs()
+    F = p.S0 * np.exp((p.r_d - p.q) * p.T)
+    P0T = np.exp(-p.r_d * p.T)
+    eq_mkt = EquityLeg.from_market(F=F, K=p.K, P0T=P0T, sig_S=p.sig_S, T=p.T)
+
+    assert eq_mkt.forward_factor(p.T) == pytest.approx(
+        eq_spot.forward_factor(p.T), rel=1e-14)
+    for eq_type, fx_dir in DIRS:
+        a = conditional_european(eq_spot, fx, p.T, p.rho, eq_type, fx_dir)["price"]
+        b = conditional_european(eq_mkt, fx, p.T, p.rho, eq_type, fx_dir)["price"]
+        assert a == pytest.approx(b, rel=1e-12, abs=1e-12)
+
+
+def test_market_leg_refuses_other_maturities():
+    """A market leg is quoted for one expiry; pricing it elsewhere must fail
+    loudly rather than silently hold the forward constant."""
+    eq = EquityLeg.from_market(F=7280.0, K=7000.0, P0T=0.978, sig_S=0.16, T=0.5)
+    assert eq.forward(0.5) == 7280.0
+    with pytest.raises(ValueError, match="cannot price it at"):
+        eq.forward(2.0)
+    with pytest.raises(ValueError, match="cannot price it at"):
+        eq.discount(1.0)
+
+
+def test_forward_factor_is_discount_times_forward():
+    eq, _ = p.legs()
+    for T in (0.25, 1.0, 3.0):
+        assert eq.forward_factor(T) == pytest.approx(
+            eq.discount(T) * eq.forward(T), rel=1e-15)
 
 
 def test_bad_direction_labels_raise():

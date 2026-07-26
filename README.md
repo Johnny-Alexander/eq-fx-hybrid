@@ -137,6 +137,22 @@ The Streamlit app and the analysis scripts continue to work — they're a differ
 `src/hybrid/`, so nothing downstream had to change. New code should prefer
 `from src.hybrid import ...`.
 
+### Measure
+
+Pricing is under the **T-forward measure** — numeraire P(0,T), so
+`V0 = P(0,T) · E^T[payoff]`. A constant short rate is contradictory once the
+payoff is *conditioned on a rate*, so the discount factor and equity forward
+are observables rather than things derived from a flat `r`:
+
+```python
+eq = EquityLeg.from_market(F=7280.0, K=7000.0, P0T=0.978, sig_S=0.16, T=0.5)
+```
+
+`EquityLeg.from_spot(...)` keeps the original flat-rate convention and is what
+the legacy `HybridInputs` API uses, so existing prices are unchanged. Note that
+under Q^T, `sig_S` is the vol of the *forward*, which equals the spot vol only
+when rates are deterministic.
+
 ### Adding an asset class
 
 The conditioning leg enters the closed form through just two scalars — a

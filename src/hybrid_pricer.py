@@ -1,10 +1,17 @@
-"""
-Closed-form bivariate Black-Scholes pricer for an EQ/FX hybrid:
+"""Closed-form bivariate Black-Scholes pricer for an EQ/FX hybrid:
 
     Payoff at T = max(S_T - K, 0) * 1{X_T > B}
 
 where S = equity (e.g. SPX), X = FX rate quoted as JPY per USD (e.g. USDJPY),
 B = FX barrier, K = equity strike. Settlement currency is USD.
+
+.. note::
+   The implementation now lives in the :mod:`src.hybrid` package, which
+   generalises this to any conditioning observable (FX today, CMS rates
+   next). This module is a compatibility layer: it keeps the flat
+   ``HybridInputs`` interface and the original function names and result-dict
+   keys, so existing scripts, notebooks and the Streamlit app are unaffected.
+   New code should prefer ``from src.hybrid import ...``.
 
 Model (under the USD risk-neutral measure)
 ------------------------------------------
@@ -43,7 +50,8 @@ with
 where mu_X = r_JPY - r_USD + sigma_X^2.
 
 The first term arises from a change of numeraire to S; the FX argument
-shifts by rho*sigma_S*sqrt(T) under that measure.
+shifts by rho*sigma_S*sqrt(T) under that measure. That shift is the piece
+that generalises across asset classes -- see :mod:`src.hybrid.conditions`.
 
 References
 ----------
@@ -52,17 +60,17 @@ References
 - Hull, "Options, Futures and Other Derivatives", Ch. on quantos
 """
 from __future__ import annotations
+
 from dataclasses import dataclass
 
-import numpy as np
-from scipy.stats import norm, multivariate_normal
+from src.hybrid import (EquityLeg, FXCondition, bivariate_normal_cdf,
+                        conditional_european, conditional_european_mc,
+                        decode_eta, double_digital, double_digital_mc)
+from src.hybrid.greeks import bumped, central_diff, second_diff
 
-
-def bivariate_normal_cdf(a: float, b: float, rho: float) -> float:
-    """P(Z1 <= a, Z2 <= b) where (Z1, Z2) is standard bivariate normal with
-    correlation rho."""
-    return multivariate_normal(mean=[0.0, 0.0],
-                               cov=[[1.0, rho], [rho, 1.0]]).cdf([a, b])
+__all__ = ["bivariate_normal_cdf", "HybridInputs", "price_hybrid",
+           "price_hybrid_mc", "price_double_digital", "price_double_digital_mc",
+           "price_hybrid_call", "price_hybrid_call_mc", "greeks"]
 
 
 @dataclass
@@ -95,22 +103,19 @@ class HybridInputs:
     sig_X: float
     rho: float
 
+    def legs(self) -> tuple[EquityLeg, FXCondition]:
+        """Split the flat inputs into the equity and conditioning legs."""
+        return (
+            EquityLeg(S0=self.S0, K=self.K, q=self.q, r_d=self.r_d,
+                      sig_S=self.sig_S),
+            FXCondition(X0=self.X0, B=self.B, r_d=self.r_d, r_f=self.r_f,
+                        sig_X=self.sig_X),
+        )
+
 
 def _eta(eq_type: str, fx_dir: str) -> tuple:
     """Decode (eq_type, fx_dir) into (eta_S, eta_X) signs."""
-    if eq_type == "call":
-        eta_S = 1
-    elif eq_type == "put":
-        eta_S = -1
-    else:
-        raise ValueError(f"eq_type must be 'call' or 'put', got {eq_type!r}")
-    if fx_dir == "above":
-        eta_X = 1
-    elif fx_dir == "below":
-        eta_X = -1
-    else:
-        raise ValueError(f"fx_dir must be 'above' or 'below', got {fx_dir!r}")
-    return eta_S, eta_X
+    return decode_eta(eq_type, fx_dir)
 
 
 def price_hybrid(p: HybridInputs, eq_type: str = "call",
@@ -135,49 +140,15 @@ def price_hybrid(p: HybridInputs, eq_type: str = "call",
         P_FX_condition         : marginal Q^USD probability of FX condition
         vanilla_equivalent     : unconditional vanilla call or put (for comparison)
     """
-    eta_S, eta_X = _eta(eq_type, fx_dir)
-    sqrtT = np.sqrt(p.T)
-
-    d1S = (np.log(p.S0 / p.K) + (p.r_d - p.q + 0.5 * p.sig_S ** 2) * p.T) / (p.sig_S * sqrtT)
-    d2S = d1S - p.sig_S * sqrtT
-
-    # FX drift under USD risk-neutral measure: mu_X = (r_JPY - r_USD) + sigma_X^2
-    # +sigma_X^2 is the quanto correction from changing numeraire JPY -> USD.
-    mu_X = (p.r_f - p.r_d) + p.sig_X ** 2
-
-    d1X = (np.log(p.X0 / p.B) + (mu_X + 0.5 * p.sig_X ** 2) * p.T) / (p.sig_X * sqrtT)
-    d2X = d1X - p.sig_X * sqrtT
-
-    # Generalized formula: indicator signs flip eta_S, eta_X into the M2 args
-    # and into the effective correlation (eta_S * eta_X * rho).
-    rho_eff = eta_S * eta_X * p.rho
-
-    term1 = eta_S * p.S0 * np.exp(-p.q * p.T) * bivariate_normal_cdf(
-        eta_S * d1S, eta_X * (d2X + p.rho * p.sig_S * sqrtT), rho_eff
-    )
-    term2 = eta_S * p.K * np.exp(-p.r_d * p.T) * bivariate_normal_cdf(
-        eta_S * d2S, eta_X * d2X, rho_eff
-    )
-
-    price = term1 - term2
-
-    P_joint = bivariate_normal_cdf(eta_S * d2S, eta_X * d2X, rho_eff)
-    P_fx = norm.cdf(eta_X * d2X)
-
-    if eq_type == "call":
-        vanilla = (p.S0 * np.exp(-p.q * p.T) * norm.cdf(d1S)
-                   - p.K * np.exp(-p.r_d * p.T) * norm.cdf(d2S))
-    else:
-        vanilla = (p.K * np.exp(-p.r_d * p.T) * norm.cdf(-d2S)
-                   - p.S0 * np.exp(-p.q * p.T) * norm.cdf(-d1S))
-
+    eq, fx = p.legs()
+    res = conditional_european(eq, fx, p.T, p.rho, eq_type, fx_dir)
     return {
-        "price": price,
-        "term1": term1,
-        "term2": term2,
-        "P_joint_exercise": P_joint,
-        "P_FX_condition": P_fx,
-        "vanilla_equivalent": vanilla,
+        "price": res["price"],
+        "term1": res["term1"],
+        "term2": res["term2"],
+        "P_joint_exercise": res["P_joint_exercise"],
+        "P_FX_condition": res["P_condition"],
+        "vanilla_equivalent": res["vanilla_equivalent"],
     }
 
 
@@ -185,30 +156,9 @@ def price_hybrid_mc(p: HybridInputs, eq_type: str = "call",
                     fx_dir: str = "above",
                     n_paths: int = 2_000_000, seed: int = 42) -> dict:
     """Monte Carlo cross-check for the generalized hybrid."""
-    eta_S, eta_X = _eta(eq_type, fx_dir)
-
-    rng = np.random.default_rng(seed)
-    z1 = rng.standard_normal(n_paths)
-    z_ind = rng.standard_normal(n_paths)
-    z2 = p.rho * z1 + np.sqrt(1.0 - p.rho ** 2) * z_ind
-
-    sqrtT = np.sqrt(p.T)
-    S_T = p.S0 * np.exp((p.r_d - p.q - 0.5 * p.sig_S ** 2) * p.T + p.sig_S * sqrtT * z1)
-    mu_X = (p.r_f - p.r_d) + p.sig_X ** 2
-    X_T = p.X0 * np.exp((mu_X - 0.5 * p.sig_X ** 2) * p.T + p.sig_X * sqrtT * z2)
-
-    eq_payoff = np.maximum(eta_S * (S_T - p.K), 0.0)
-    fx_indicator = (eta_X * (X_T - p.B) > 0).astype(float)
-
-    payoff = eq_payoff * fx_indicator
-    pv = np.exp(-p.r_d * p.T) * payoff
-    price = pv.mean()
-    se = pv.std(ddof=1) / np.sqrt(n_paths)
-    return {
-        "price": price,
-        "std_error": se,
-        "ci95": (price - 1.96 * se, price + 1.96 * se),
-    }
+    eq, fx = p.legs()
+    return conditional_european_mc(eq, fx, p.T, p.rho, eq_type, fx_dir,
+                                   n_paths=n_paths, seed=seed)
 
 
 def price_double_digital(p: HybridInputs, notional: float = 1.0,
@@ -227,31 +177,14 @@ def price_double_digital(p: HybridInputs, notional: float = 1.0,
     -------
     dict with keys: price, P_joint, P_eq, P_fx, df.
     """
-    # Reuse _eta with a placeholder eq_type label; only the sign matters.
-    eta_S = +1 if eq_dir == "above" else -1 if eq_dir == "below" else None
-    eta_X = +1 if fx_dir == "above" else -1 if fx_dir == "below" else None
-    if eta_S is None:
-        raise ValueError(f"eq_dir must be 'above' or 'below', got {eq_dir!r}")
-    if eta_X is None:
-        raise ValueError(f"fx_dir must be 'above' or 'below', got {fx_dir!r}")
-
-    sqrtT = np.sqrt(p.T)
-    d2S = (np.log(p.S0 / p.K) + (p.r_d - p.q - 0.5 * p.sig_S ** 2) * p.T) / (p.sig_S * sqrtT)
-    mu_X = (p.r_f - p.r_d) + p.sig_X ** 2
-    d2X = (np.log(p.X0 / p.B) + (mu_X - 0.5 * p.sig_X ** 2) * p.T) / (p.sig_X * sqrtT)
-
-    rho_eff = eta_S * eta_X * p.rho
-    P_joint = bivariate_normal_cdf(eta_S * d2S, eta_X * d2X, rho_eff)
-    P_eq = norm.cdf(eta_S * d2S)
-    P_fx = norm.cdf(eta_X * d2X)
-    df = np.exp(-p.r_d * p.T)
-
+    eq, fx = p.legs()
+    res = double_digital(eq, fx, p.T, p.rho, notional, eq_dir, fx_dir)
     return {
-        "price": notional * df * P_joint,
-        "P_joint": P_joint,
-        "P_eq": P_eq,
-        "P_fx": P_fx,
-        "df": df,
+        "price": res["price"],
+        "P_joint": res["P_joint"],
+        "P_eq": res["P_eq"],
+        "P_fx": res["P_condition"],
+        "df": res["df"],
     }
 
 
@@ -259,25 +192,9 @@ def price_double_digital_mc(p: HybridInputs, notional: float = 1.0,
                             eq_dir: str = "above", fx_dir: str = "above",
                             n_paths: int = 2_000_000, seed: int = 42) -> dict:
     """MC cross-check for the double digital."""
-    eta_S = +1 if eq_dir == "above" else -1
-    eta_X = +1 if fx_dir == "above" else -1
-
-    rng = np.random.default_rng(seed)
-    z1 = rng.standard_normal(n_paths)
-    z_ind = rng.standard_normal(n_paths)
-    z2 = p.rho * z1 + np.sqrt(1.0 - p.rho ** 2) * z_ind
-
-    sqrtT = np.sqrt(p.T)
-    S_T = p.S0 * np.exp((p.r_d - p.q - 0.5 * p.sig_S ** 2) * p.T + p.sig_S * sqrtT * z1)
-    mu_X = (p.r_f - p.r_d) + p.sig_X ** 2
-    X_T = p.X0 * np.exp((mu_X - 0.5 * p.sig_X ** 2) * p.T + p.sig_X * sqrtT * z2)
-
-    indicator = ((eta_S * (S_T - p.K) > 0) & (eta_X * (X_T - p.B) > 0)).astype(float)
-    pv = np.exp(-p.r_d * p.T) * notional * indicator
-    price = pv.mean()
-    se = pv.std(ddof=1) / np.sqrt(n_paths)
-    return {"price": price, "std_error": se,
-            "ci95": (price - 1.96 * se, price + 1.96 * se)}
+    eq, fx = p.legs()
+    return double_digital_mc(eq, fx, p.T, p.rho, notional, eq_dir, fx_dir,
+                             n_paths=n_paths, seed=seed)
 
 
 def price_hybrid_call(p: HybridInputs) -> dict:
@@ -304,11 +221,13 @@ def price_hybrid_call_mc(p: HybridInputs, n_paths: int = 2_000_000,
                            n_paths=n_paths, seed=seed)
 
 
+def _price(p: HybridInputs) -> float:
+    return price_hybrid_call(p)["price"]
+
+
 def _bump(p: HybridInputs, field: str, h: float) -> float:
     """Return price with one input bumped by h."""
-    d = p.__dict__.copy()
-    d[field] = d[field] + h
-    return price_hybrid_call(HybridInputs(**d))["price"]
+    return bumped(_price, p, field, h)
 
 
 def greeks(p: HybridInputs) -> dict:
@@ -330,24 +249,21 @@ def greeks(p: HybridInputs) -> dict:
     dict with delta_SPX, gamma_SPX, delta_FX, vega_SPX, vega_FX, cega_corr,
     rho_USD, rho_JPY.
     """
-    base = price_hybrid_call(p)["price"]
-
     dS = 0.01 * p.S0
-    dX_pct = 0.01            # 1% FX move
-    dX = dX_pct * p.X0       # absolute FX bump for a 1% move
-    dv = 0.01    # 1 vol point
-    dr = 1e-4    # 1bp
+    dX = 0.01 * p.X0         # absolute FX bump for a 1% move
+    dv = 0.01                # 1 vol point
+    dr = 1e-4                # 1bp
     drho = 0.01
 
     return {
-        "delta_SPX": (_bump(p, "S0", dS) - _bump(p, "S0", -dS)) / (2 * dS),
-        "gamma_SPX": (_bump(p, "S0", dS) - 2 * base + _bump(p, "S0", -dS)) / (dS ** 2),
+        "delta_SPX": central_diff(_price, p, "S0", dS),
+        "gamma_SPX": second_diff(_price, p, "S0", dS),
         # FX delta as price change per 1% FX move:
         # = (V(X*1.01) - V(X*0.99)) / 2  -- already on the desired scale
-        "delta_FX": (_bump(p, "X0", dX) - _bump(p, "X0", -dX)) / 2,
-        "vega_SPX": (_bump(p, "sig_S", dv) - _bump(p, "sig_S", -dv)) / (2 * dv) / 100,
-        "vega_FX":  (_bump(p, "sig_X", dv) - _bump(p, "sig_X", -dv)) / (2 * dv) / 100,
-        "cega_corr": (_bump(p, "rho", drho) - _bump(p, "rho", -drho)) / (2 * drho) / 100,
-        "rho_USD": (_bump(p, "r_d", dr) - _bump(p, "r_d", -dr)) / (2 * dr) / 10000,
-        "rho_JPY": (_bump(p, "r_f", dr) - _bump(p, "r_f", -dr)) / (2 * dr) / 10000,
+        "delta_FX": central_diff(_price, p, "X0", dX) * dX,
+        "vega_SPX": central_diff(_price, p, "sig_S", dv) / 100,
+        "vega_FX": central_diff(_price, p, "sig_X", dv) / 100,
+        "cega_corr": central_diff(_price, p, "rho", drho) / 100,
+        "rho_USD": central_diff(_price, p, "r_d", dr) / 10000,
+        "rho_JPY": central_diff(_price, p, "r_f", dr) / 10000,
     }

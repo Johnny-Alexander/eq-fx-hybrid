@@ -110,7 +110,13 @@ hybrid-pricer/
 │   ├── conditional_european.ipynb   # vanilla x FX-indicator, 4 variants
 │   └── digital.ipynb                # joint cash-or-nothing, 4 variants
 ├── src/
-│   ├── hybrid_pricer.py             # generalized closed-form + MC + Greeks
+│   ├── hybrid/                      # the pricer, split by responsibility
+│   │   ├── bivariate.py             #   shared normal machinery
+│   │   ├── equity.py                #   equity leg: forward, d1/d2, vanilla
+│   │   ├── conditions.py            #   pluggable conditioning leg (FX today)
+│   │   ├── products.py              #   conditional european, double digital
+│   │   └── greeks.py                #   generic bump-and-revalue
+│   ├── hybrid_pricer.py             # compatibility shim over src/hybrid
 │   └── trade_config.py              # example trade for scripts/tests
 ├── scripts/                         # 7 standalone analysis scripts -> figures/
 ├── figures/                         # pre-generated PNGs from scripts/
@@ -118,12 +124,34 @@ hybrid-pricer/
 │   ├── app.py                       # Streamlit pricer (mobile-friendly)
 │   └── MOBILE_DEPLOY.md
 ├── docs/                            # GitHub Pages (stlite/Pyodide) deploy
-├── tests/test_hybrid.py             # closed-form vs MC, identity, monotonicity
+├── tests/
+│   ├── test_hybrid.py               # legacy API: closed form vs MC, identities
+│   └── test_hybrid_package.py       # layered API + abstraction invariants
 ├── requirements.txt
 └── LICENSE
 ```
 
 The Streamlit app and the analysis scripts continue to work — they're a different surface on the same pricer.
+
+`src/hybrid_pricer.py` keeps the original flat `HybridInputs` API and delegates to
+`src/hybrid/`, so nothing downstream had to change. New code should prefer
+`from src.hybrid import ...`.
+
+### Adding an asset class
+
+The conditioning leg enters the closed form through just two scalars — a
+standardised threshold `h`, and the shift `rho * sig_S * sqrt(T)` that `h`
+picks up when the numeraire changes from cash to the equity. That shift is
+*dynamics-independent*, so a new asset class means implementing `h` and
+nothing else:
+
+```python
+# FX, lognormal
+h = (log(X0/B) + (mu_X - 0.5*sig_X**2)*T) / (sig_X*sqrt(T))
+
+# CMS rate, normal/Bachelier — no log, no -0.5*sig^2*T
+h = (R_adj - B) / (sig_R*sqrt(T))
+```
 
 ---
 

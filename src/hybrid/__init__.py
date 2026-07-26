@@ -17,6 +17,7 @@ on CMS10 above 4% is the same call with a different leg::
     >>> conditional_european(eq, cms, T=2.0, rho=-0.30)["price"]  # doctest: +SKIP
 """
 from .bivariate import bivariate_normal_cdf
+from .cms import adjusted_cms_rate, convexity_adjustment
 from .conditions import (ConditionLeg, FXCondition, RateCondition,
                          ShiftedLognormalRateCondition)
 from .equity import EquityLeg
@@ -28,6 +29,7 @@ __all__ = [
     "bivariate_normal_cdf",
     "ConditionLeg", "FXCondition", "RateCondition",
     "ShiftedLognormalRateCondition",
+    "adjusted_cms_rate", "convexity_adjustment",
     "EquityLeg",
     "bumped", "central_diff", "second_diff",
     "conditional_european", "conditional_european_mc",

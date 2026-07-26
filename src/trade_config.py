@@ -1,7 +1,7 @@
 """Default example trades used across the analysis scripts and notebooks."""
 import numpy as np
 
-from src.hybrid import EquityLeg, RateCondition
+from src.hybrid import EquityLeg, RateCondition  # noqa: F401
 from src.hybrid_pricer import HybridInputs
 
 NOTIONAL = 100e6  # $100mm
@@ -37,9 +37,13 @@ EQIR_EQUITY = EquityLeg.from_market(
     sig_S=0.16,                                   # vol of the FORWARD
     T=EQIR_T,
 )
-EQIR_CONDITION = RateCondition(
-    R_adj=0.0415,   # convexity-adjusted 10y CMS forward (NOT the swap rate)
+EQIR_FORWARD_SWAP = 0.0410  # unadjusted 10y forward swap rate, 2y forward
+EQIR_CONDITION = RateCondition.from_forward_swap(
+    R_0=EQIR_FORWARD_SWAP,
     B=0.04,         # 4% barrier
     sig_R=0.0080,   # 80bp/yr normal vol
-)
+    T=EQIR_T,
+    tenor=10,       # CMS10
+    freq=2,         # semiannual swap
+)  # -> R_adj ~= 4.1445%, i.e. +4.45bp of convexity
 EQIR_RHO = -0.30    # SPX / CMS10 correlation

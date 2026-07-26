@@ -185,6 +185,24 @@ class RateCondition(ConditionLeg):
                 f"sig_R={self.sig_R} is not a plausible normal vol. Pass "
                 f"absolute rate units per sqrt(year): 0.0080 for 80bp, not 80.")
 
+    @classmethod
+    def from_forward_swap(cls, R_0: float, B: float, sig_R: float, T: float,
+                          tenor: float, freq: int = 2) -> "RateCondition":
+        """Build from the *unadjusted* forward swap rate, adjusting internally.
+
+        Prefer this over passing ``R_adj`` by hand -- it is the path that
+        cannot silently omit the convexity adjustment.
+
+            >>> RateCondition.from_forward_swap(
+            ...     R_0=0.0410, B=0.04, sig_R=0.0080, T=2.0, tenor=10)
+
+        See :mod:`src.hybrid.cms` for the approximation used and its limits.
+        """
+        from .cms import adjusted_cms_rate
+        R_adj = adjusted_cms_rate(R_0, T, sig_R, tenor, freq,
+                                  vol_type="normal")
+        return cls(R_adj=R_adj, B=B, sig_R=sig_R)
+
     def h(self, T: float) -> float:
         return (self.R_adj - self.B) / (self.sig_R * np.sqrt(T))
 

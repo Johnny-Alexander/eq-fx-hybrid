@@ -116,6 +116,7 @@ hybrid-pricer/
 │   │   ├── bivariate.py             #   shared normal machinery
 │   │   ├── equity.py                #   equity leg: forward, d1/d2, vanilla
 │   │   ├── conditions.py            #   pluggable conditioning legs (FX, rates)
+│   │   ├── cms.py                   #   CMS convexity adjustment
 │   │   ├── products.py              #   conditional european, double digital
 │   │   └── greeks.py                #   generic bump-and-revalue
 │   ├── hybrid_pricer.py             # compatibility shim over src/hybrid
@@ -129,7 +130,8 @@ hybrid-pricer/
 ├── tests/
 │   ├── test_hybrid.py               # legacy API: closed form vs MC, identities
 │   ├── test_hybrid_package.py       # layered API + abstraction invariants
-│   └── test_rates.py                # EQ/IR: closed form vs MC, unit guards
+│   ├── test_rates.py                # EQ/IR: closed form vs MC, unit guards
+│   └── test_cms.py                  # convexity: derivatives, scaling, sign
 ├── requirements.txt
 └── LICENSE
 ```
@@ -178,9 +180,12 @@ So an SPX call contingent on `CMS10 > 4%` is the same call with a different leg:
 from src.hybrid import EquityLeg, RateCondition, conditional_european
 
 eq  = EquityLeg.from_market(F=7647.0, K=7000.0, P0T=0.9139, sig_S=0.16, T=2.0)
-cms = RateCondition(R_adj=0.0415, B=0.04, sig_R=0.0080)  # 80bp/yr normal vol
+cms = RateCondition.from_forward_swap(
+    R_0=0.0410, B=0.04, sig_R=0.0080,   # 80bp/yr normal vol
+    T=2.0, tenor=10, freq=2,            # CMS10, semiannual
+)
 
-conditional_european(eq, cms, T=2.0, rho=-0.30)["price"]   # 389.28
+conditional_european(eq, cms, T=2.0, rho=-0.30)["price"]   # 387.44
 ```
 
 Rates default to **normal/Bachelier** (post-2015 market convention, handles
@@ -188,9 +193,24 @@ negative rates); `ShiftedLognormalRateCondition` covers shifted-lognormal
 quoting. Units are guarded — passing `4` for 4%, or `80` for 80bp, raises
 rather than returning a plausible wrong number.
 
-> **Not yet implemented:** the CMS **convexity adjustment**. `R_adj` is taken
-> as an input, and a CMS rate is not a martingale under the T-forward measure,
-> so passing the plain forward swap rate will systematically misprice.
+### CMS convexity
+
+A swap rate is a martingale under the annuity measure, not under the
+$T$-forward measure the hybrid prices in, so $\mathbb{E}^T[R_T] \neq R_0$.
+`from_forward_swap` applies the adjustment for you; it is the path that can't
+silently omit it. Passing `R_adj` directly is still supported, but it trusts
+you to have adjusted the rate already.
+
+The approximation is second-order in the annuity's curvature,
+
+$$\mathbb{E}^T[R_T] \approx R_0 - \tfrac{1}{2}\,\sigma^2 T\,\frac{G''(R_0)}{G'(R_0)}, \qquad G(y)=\sum_{i=1}^{n}\frac{\delta}{(1+\delta y)^i}$$
+
+which for CMS10 fixing in 2y at 80bp vol is **+4.45bp** — worth 3.8% of this
+structure's premium. It ignores the **smile** (one vol, no skew), so expect a
+few tenths of a bp to a few bp of difference against full static replication,
+growing with maturity, tenor and skew steepness. Only the mean is adjusted;
+the leg keeps its vol and its shape. There is no payment-delay term because
+these products condition on the CMS *fixing* and settle at the same date.
 
 ---
 

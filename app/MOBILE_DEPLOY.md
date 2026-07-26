@@ -14,7 +14,7 @@ The app runs on your Mac. You connect from your iPhone over the local WiFi netwo
 ### Steps
 
 ```bash
-cd eq-fx-hybrid
+cd hybrid-pricer
 pip install -r requirements.txt streamlit
 ./run_app.sh
 ```
@@ -55,14 +55,14 @@ Deploy publicly so the app has a URL you can hit from anywhere — cellular, hot
 2. **Go to https://share.streamlit.io** and sign in with GitHub.
 
 3. **Click "Create app"** and point it at:
-   - Repository: `<your-github-username>/eq-fx-hybrid`
+   - Repository: `<your-github-username>/hybrid-pricer`
    - Branch: `main`
    - Main file path: `app/app.py`
 
 4. **Click Deploy.** First build takes ~2 minutes. You'll get a URL like:
 
    ```
-   https://eq-fx-hybrid.streamlit.app
+   https://hybrid-pricer.streamlit.app
    ```
 
 5. **Open on iPhone** and add to Home Screen.

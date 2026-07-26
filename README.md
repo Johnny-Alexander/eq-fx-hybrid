@@ -105,7 +105,7 @@ A "perfectly SPX-delta-hedged" position can lose 25%+ of MTM on a single liquid 
 ## Repository layout
 
 ```
-eq-fx-hybrid/
+hybrid-pricer/
 ├── notebooks/
 │   ├── conditional_european.ipynb   # vanilla x FX-indicator, 4 variants
 │   └── digital.ipynb                # joint cash-or-nothing, 4 variants

@@ -31,7 +31,7 @@ After pushing the repo:
 Wait ~1 minute, then your URL is:
 
 ```
-https://<your-username>.github.io/eq-fx-hybrid/
+https://<your-username>.github.io/hybrid-pricer/
 ```
 
 That's it. No build step, no CI, no deploy keys. Pushing to `main` auto-redeploys.
@@ -62,4 +62,4 @@ That's it. No build step, no CI, no deploy keys. Pushing to `main` auto-redeploy
 
 ## Hybrid approach
 
-Nothing stops you from using **both** — Streamlit Cloud at `eq-fx-hybrid.streamlit.app` for desk use, and a GitHub Pages mirror at `username.github.io/eq-fx-hybrid` as a portfolio link. They use the same code.
+Nothing stops you from using **both** — Streamlit Cloud at `hybrid-pricer.streamlit.app` for desk use, and a GitHub Pages mirror at `username.github.io/hybrid-pricer` as a portfolio link. They use the same code.

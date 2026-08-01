@@ -112,13 +112,26 @@ A "perfectly SPX-delta-hedged" position can lose 25%+ of MTM on a single liquid 
 
 **[→ interactive version](https://johnny-alexander.github.io/hybrid-pricer/surface.html)** · drag to rotate, press play
 
-Two animations of the same short $100mm double digital, built from the closed
+Three animations of the same short $100mm double digital, built from the closed
 form in `src/hybrid/` and rendered to both a hosted page and an MP4:
 
 | Clip | What moves | What it shows |
 |---|---|---|
 | `media/eqfx_dual_digital_time_decay.mp4` | time to expiry, 6m → 0 | A smooth bivariate-normal ridge collapsing onto the strike/barrier **corner** |
+| `media/eqfx_dual_digital_delta_hedged.mp4` | same, hedge subtracted | What a **static** delta hedge leaves behind — see the caveat below |
 | `media/eqfx_dual_digital_correlation.mp4` | $\rho$, −0.9 → +0.9 | Spot, vols and time held still — the mark at spot moves $2.5mm → $24.5mm on correlation alone |
+
+The hedge is not small: to be delta-flat on day one this trade needs **$75mm of
+SPX and $322mm equivalent of USDJPY** — over three times the notional, on the
+FX leg alone.
+
+> **On the delta-hedged clip.** The hedge it draws is struck once at inception
+> and held to expiry. No desk hedges that way, so its wings measure what a
+> *static* hedge costs, not what hedging costs. There is no fully honest
+> alternative: a continuously re-hedged book has no single surface at all,
+> because the hedge then depends on the path taken to each point rather than
+> the point itself. Use the unhedged clip as the headline and this one to
+> answer "why not just hedge it?".
 
 The corner is the point. A single-asset digital gives you a *wall*; two
 conditions give you a **vertex**, and the gradient at that vertex is a
@@ -140,6 +153,15 @@ Three choices in the rendering are load-bearing rather than cosmetic:
   animation cannot lie about magnitude.
 - **Blue/red, not green/red.** Red-green deficiency affects roughly 8% of men,
   which in a large audience is a meaningful slice of the room.
+- **Lightness moves monotonically away from zero**, in the direction away from
+  the chart surface — extremes darken on a light ground, glow on a dark one.
+  Get this backwards and the largest losses become the *least* prominent thing
+  on screen.
+
+Five themes ship in `src/viz/surface3d.py` (`dark`, `paper`, `ivory`,
+`institutional`, `minimal`); `paper` is the default for rendering because a
+dark ground is the first thing a conference-room projector destroys. Switch
+with `--theme`.
 
 ---
 

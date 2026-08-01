@@ -11,7 +11,8 @@ import pytest
 from src.hybrid import EquityLeg, FXCondition, double_digital
 from src.hybrid.bivariate import bivariate_normal_cdf, bivariate_normal_cdf_vec
 from src.hybrid.surface import (SurfaceGrid, correlation_schedule,
-                                dual_digital_value_grid, inception_premium,
+                                dual_digital_value_grid, hedged_short_pnl_grid,
+                                inception_deltas, inception_premium,
                                 short_pnl_grid, time_to_expiry_schedule)
 from src.trade_config import EXAMPLE_TRADE as P, NOTIONAL
 
@@ -180,3 +181,76 @@ def test_correlation_schedule_pingpongs():
     assert rho.max() == pytest.approx(0.9)
     assert rho[-1] == pytest.approx(rho[1])       # loops back, no repeat frame
     assert np.all(np.abs(rho) <= 0.9)
+
+
+# -- the delta hedge -----------------------------------------------------
+
+def test_inception_deltas_are_positive_and_sized_right():
+    """Short a dual digital, hedge long both legs."""
+    delta_S, delta_X = inception_deltas(P, NOTIONAL)
+
+    assert delta_S > 0 and delta_X > 0
+    # Sanity on magnitude: the FX leg is the barrier leg and carries far more
+    # delta per unit of spot than the equity leg -- around 3x notional in
+    # equivalent terms, which is the headline risk number for this trade.
+    assert 2.5 < delta_X * P.X0 / NOTIONAL < 4.0
+    assert 0.5 < delta_S * P.S0 / NOTIONAL < 1.2
+
+
+def test_hedge_is_flat_at_spot_by_construction():
+    """The hedge contributes exactly zero where it was struck."""
+    premium = inception_premium(P, NOTIONAL)
+    deltas = inception_deltas(P, NOTIONAL)
+    point = SurfaceGrid(S=np.array([P.S0]), X=np.array([P.X0]))
+
+    for tau in (P.T, 0.1, 0.0):
+        raw = short_pnl_grid(point, P, tau, NOTIONAL, premium)[0, 0]
+        hedged = hedged_short_pnl_grid(point, P, tau, NOTIONAL, premium,
+                                       deltas)[0, 0]
+        assert hedged == pytest.approx(raw)
+
+
+def test_hedge_removes_the_first_order_slope():
+    """Near spot the hedged surface is flat to first order; raw is not."""
+    premium = inception_premium(P, NOTIONAL)
+    deltas = inception_deltas(P, NOTIONAL)
+    h = 5.0
+    near = SurfaceGrid(S=np.array([P.S0 - h, P.S0 + h]), X=np.array([P.X0]))
+
+    raw = short_pnl_grid(near, P, P.T, NOTIONAL, premium)[0]
+    hedged = hedged_short_pnl_grid(near, P, P.T, NOTIONAL, premium, deltas)[0]
+
+    raw_slope = abs(raw[1] - raw[0]) / (2 * h)
+    hedged_slope = abs(hedged[1] - hedged[0]) / (2 * h)
+    assert hedged_slope < 0.01 * raw_slope
+
+
+def test_hedged_surface_equals_raw_plus_linear_hedge():
+    """No hidden terms: it is exactly the tangent-plane subtraction."""
+    premium = inception_premium(P, NOTIONAL)
+    deltas = inception_deltas(P, NOTIONAL)
+    grid = SurfaceGrid.around(P.S0, P.X0, n=25)
+    S, X = grid.mesh()
+
+    raw = short_pnl_grid(grid, P, 0.2, NOTIONAL, premium)
+    hedged = hedged_short_pnl_grid(grid, P, 0.2, NOTIONAL, premium, deltas)
+
+    expected = raw + deltas[0] * (S - P.S0) + deltas[1] * (X - P.X0)
+    assert np.allclose(hedged, expected)
+
+
+def test_hedged_surface_is_unbounded_unlike_the_raw_one():
+    """A linear hedge against a step payoff has no floor. Worth asserting."""
+    premium = inception_premium(P, NOTIONAL)
+    deltas = inception_deltas(P, NOTIONAL)
+
+    narrow = SurfaceGrid.around(P.S0, P.X0, S_pct=0.16, X_pct=0.11, n=30)
+    wide = SurfaceGrid.around(P.S0, P.X0, S_pct=0.32, X_pct=0.22, n=30)
+
+    assert (hedged_short_pnl_grid(wide, P, 0.0, NOTIONAL, premium, deltas).min()
+            < hedged_short_pnl_grid(narrow, P, 0.0, NOTIONAL, premium,
+                                    deltas).min())
+    # ...whereas the raw short PnL is floored at premium - notional whatever
+    # the grid does.
+    assert short_pnl_grid(wide, P, 0.0, NOTIONAL, premium).min() == pytest.approx(
+        short_pnl_grid(narrow, P, 0.0, NOTIONAL, premium).min())

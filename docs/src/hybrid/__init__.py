@@ -26,7 +26,8 @@ from .greeks import bumped, central_diff, second_diff
 from .products import (conditional_european, conditional_european_mc,
                        decode_eta, double_digital, double_digital_mc)
 from .surface import (SurfaceGrid, correlation_schedule,
-                      dual_digital_value_grid, inception_premium,
+                      dual_digital_value_grid, hedged_short_pnl_grid,
+                      inception_deltas, inception_premium,
                       marginal_probabilities, short_pnl_grid,
                       time_to_expiry_schedule)
 
@@ -41,6 +42,7 @@ __all__ = [
     "conditional_european", "conditional_european_mc",
     "double_digital", "double_digital_mc", "decode_eta",
     "SurfaceGrid", "dual_digital_value_grid", "short_pnl_grid",
-    "inception_premium", "marginal_probabilities",
-    "time_to_expiry_schedule", "correlation_schedule",
+    "hedged_short_pnl_grid", "inception_deltas", "inception_premium",
+    "marginal_probabilities", "time_to_expiry_schedule",
+    "correlation_schedule",
 ]

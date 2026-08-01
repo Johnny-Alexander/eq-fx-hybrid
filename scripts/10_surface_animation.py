@@ -1,8 +1,9 @@
 """Render the PnL surfaces to MP4 for embedding in a slide deck.
 
-    python3 scripts/10_surface_animation.py              # both clips, 1080p
-    python3 scripts/10_surface_animation.py --scene time # just the time decay
-    python3 scripts/10_surface_animation.py --scale 2    # 4K
+    python3 scripts/10_surface_animation.py                # all clips, 1080p
+    python3 scripts/10_surface_animation.py --scene hedged # just one
+    python3 scripts/10_surface_animation.py --scale 2      # 4K
+    python3 scripts/10_surface_animation.py --theme dark   # any built theme
 
 Frames come from the same figure spec as the interactive page, so the video
 and the hosted version cannot drift apart. Output is H.264 / yuv420p, which is
@@ -23,8 +24,9 @@ import numpy as np
 import plotly.io as pio
 
 from src.trade_config import EXAMPLE_TRADE as P, NOTIONAL
-from src.viz.scenes import VIDEO_FRAMES, VIDEO_GRID, correlation_scene, time_decay_scene
-from src.viz.surface3d import orbit_camera
+from src.viz.scenes import (VIDEO_FRAMES, VIDEO_GRID, correlation_scene,
+                            hedged_time_decay_scene, time_decay_scene)
+from src.viz.surface3d import THEMES, orbit_camera
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MEDIA = os.path.join(ROOT, "media")
@@ -35,10 +37,11 @@ FPS = 30
 #: before it moves, and a beat on the final shape before it cuts.
 HOLD_START, HOLD_END = 1.2, 2.0
 
+DEFAULT_RENDER_THEME = "paper"
+
 SCENES = {
     "time": dict(
-        builder=lambda n_grid, n_frames: time_decay_scene(
-            P, NOTIONAL, n_grid=n_grid, n_frames=n_frames),
+        builder=time_decay_scene,
         n_frames=VIDEO_FRAMES,
         filename="eqfx_dual_digital_time_decay.mp4",
         # A slow orbit through the clip: enough parallax to read the surface
@@ -46,9 +49,15 @@ SCENES = {
         azimuth=(40.0, 74.0),
         elevation=(24.0, 17.0),
     ),
+    "hedged": dict(
+        builder=hedged_time_decay_scene,
+        n_frames=VIDEO_FRAMES,
+        filename="eqfx_dual_digital_delta_hedged.mp4",
+        azimuth=(40.0, 74.0),
+        elevation=(24.0, 17.0),
+    ),
     "rho": dict(
-        builder=lambda n_grid, n_frames: correlation_scene(
-            P, NOTIONAL, n_grid=n_grid, n_frames=n_frames),
+        builder=correlation_scene,
         n_frames=150,
         filename="eqfx_dual_digital_correlation.mp4",
         azimuth=(44.0, 64.0),
@@ -96,13 +105,14 @@ def _encode(frame_dir, out_path, n_frames, fps, width, height):
     return len(order) / fps
 
 
-def render(scene_key, scale, n_grid, fps):
+def render(scene_key, scale, n_grid, fps, theme):
     spec = SCENES[scene_key]
     width, height = 1920 * scale, 1080 * scale
 
     print(f"\n[{scene_key}] building {spec['n_frames']} frames "
-          f"on a {n_grid}x{n_grid} grid...")
-    anim = spec["builder"](n_grid, spec["n_frames"])
+          f"on a {n_grid}x{n_grid} grid, theme={theme}...")
+    anim = spec["builder"](P, NOTIONAL, n_grid=n_grid,
+                           n_frames=spec["n_frames"], theme=theme)
     n_frames = len(anim.frames)
     cameras = _orbit(spec, n_frames)
 
@@ -137,11 +147,13 @@ def main():
                     help="1 = 1920x1080, 2 = 3840x2160")
     ap.add_argument("--grid", type=int, default=VIDEO_GRID)
     ap.add_argument("--fps", type=int, default=FPS)
+    ap.add_argument("--theme", choices=sorted(THEMES),
+                    default=DEFAULT_RENDER_THEME)
     args = ap.parse_args()
 
     keys = list(SCENES) if args.scene == "all" else [args.scene]
     for key in keys:
-        render(key, args.scale, args.grid, args.fps)
+        render(key, args.scale, args.grid, args.fps, args.theme)
 
 
 if __name__ == "__main__":

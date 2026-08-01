@@ -35,7 +35,9 @@ from .bivariate import bivariate_normal_cdf_vec, norm
 from .products import decode_eta
 
 __all__ = ["SurfaceGrid", "dual_digital_value_grid", "short_pnl_grid",
-           "inception_premium", "time_to_expiry_schedule", "correlation_schedule"]
+           "hedged_short_pnl_grid", "inception_deltas", "inception_premium",
+           "marginal_probabilities", "time_to_expiry_schedule",
+           "correlation_schedule"]
 
 
 @dataclass(frozen=True)
@@ -139,6 +141,57 @@ def short_pnl_grid(grid: SurfaceGrid, p, tau: float, notional: float,
     value = dual_digital_value_grid(grid, p, tau, notional, rho=rho,
                                     eq_dir=eq_dir, cond_dir=cond_dir)
     return premium - value
+
+
+def inception_deltas(p, notional: float, rho: float | None = None,
+                     eq_dir: str = "above", cond_dir: str = "above",
+                     dS: float = 1.0, dX: float = 0.01) -> tuple[float, float]:
+    """``(dV/dS, dV/dX)`` at the trade's own spots and expiry.
+
+    These are the hedge ratios struck **once, at inception** -- the static
+    hedge. That is the honest thing to draw on a surface: a continuously
+    re-hedged book has no single surface, because the hedge depends on the
+    path taken to each point, not the point itself.
+
+    Bump-and-revalue rather than closed form, matching the convention in
+    :mod:`src.hybrid.greeks`.
+    """
+    def value_at(S, X):
+        point = SurfaceGrid(S=np.array([S]), X=np.array([X]))
+        return dual_digital_value_grid(point, p, p.T, notional, rho=rho,
+                                       eq_dir=eq_dir, cond_dir=cond_dir)[0, 0]
+
+    delta_S = (value_at(p.S0 + dS, p.X0) - value_at(p.S0 - dS, p.X0)) / (2 * dS)
+    delta_X = (value_at(p.S0, p.X0 + dX) - value_at(p.S0, p.X0 - dX)) / (2 * dX)
+    return delta_S, delta_X
+
+
+def hedged_short_pnl_grid(grid: SurfaceGrid, p, tau: float, notional: float,
+                          premium: float, deltas: tuple[float, float],
+                          rho: float | None = None, eq_dir: str = "above",
+                          cond_dir: str = "above") -> np.ndarray:
+    """Short position **plus its static delta hedge**, across the plane.
+
+        PnL = (premium - V) + dV/dS * (S - S0) + dV/dX * (X - X0)
+
+    Short the option, so the hedge is long both underlyings. Subtracting the
+    tangent plane at inception kills the first-order slope, which is the
+    point: what is left is the curvature the desk actually carries. It is
+    zero at spot by construction, and the residual through the strike/barrier
+    corner is cross-gamma -- the correlation exposure -- rather than anything
+    a linear hedge can touch.
+
+    Note this is unbounded: the hedge is linear and the payoff is a step, so
+    far enough into the quadrant where the hedge loses and the option never
+    pays, losses grow without limit. That is not an artefact, it is what a
+    static hedge does.
+    """
+    delta_S, delta_X = deltas
+    S, X = grid.mesh()
+    value = dual_digital_value_grid(grid, p, tau, notional, rho=rho,
+                                    eq_dir=eq_dir, cond_dir=cond_dir)
+    hedge = delta_S * (S - p.S0) + delta_X * (X - p.X0)
+    return premium - value + hedge
 
 
 def marginal_probabilities(p, tau: float, S: float, X: float,

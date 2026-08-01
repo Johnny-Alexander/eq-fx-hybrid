@@ -16,7 +16,7 @@ on CMS10 above 4% is the same call with a different leg::
     >>> cms = RateCondition(R_adj=0.0415, B=0.04, sig_R=0.0080)
     >>> conditional_european(eq, cms, T=2.0, rho=-0.30)["price"]  # doctest: +SKIP
 """
-from .bivariate import bivariate_normal_cdf
+from .bivariate import bivariate_normal_cdf, bivariate_normal_cdf_vec
 from .cms import adjusted_cms_rate, convexity_adjustment
 from .conditions import (ConditionLeg, FXCondition, RateCondition,
                          ShiftedLognormalRateCondition)
@@ -25,9 +25,13 @@ from .equity import EquityLeg
 from .greeks import bumped, central_diff, second_diff
 from .products import (conditional_european, conditional_european_mc,
                        decode_eta, double_digital, double_digital_mc)
+from .surface import (SurfaceGrid, correlation_schedule,
+                      dual_digital_value_grid, inception_premium,
+                      marginal_probabilities, short_pnl_grid,
+                      time_to_expiry_schedule)
 
 __all__ = [
-    "bivariate_normal_cdf",
+    "bivariate_normal_cdf", "bivariate_normal_cdf_vec",
     "ConditionLeg", "FXCondition", "RateCondition",
     "ShiftedLognormalRateCondition",
     "adjusted_cms_rate", "convexity_adjustment",
@@ -36,4 +40,7 @@ __all__ = [
     "bumped", "central_diff", "second_diff",
     "conditional_european", "conditional_european_mc",
     "double_digital", "double_digital_mc", "decode_eta",
+    "SurfaceGrid", "dual_digital_value_grid", "short_pnl_grid",
+    "inception_premium", "marginal_probabilities",
+    "time_to_expiry_schedule", "correlation_schedule",
 ]

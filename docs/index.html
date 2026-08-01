@@ -24,9 +24,19 @@
       animation: spin 1s linear infinite; margin: 20px;
     }
     @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    /* Sits above the stlite iframe so the surface page stays reachable while
+       the pricer is still booting Pyodide. */
+    .surface-link {
+      position: fixed; top: 10px; right: 12px; z-index: 10000;
+      font-family: -apple-system, sans-serif; font-size: 13px;
+      background: #0d0d0d; color: #fff; text-decoration: none;
+      padding: 7px 13px; border-radius: 6px; opacity: 0.9;
+    }
+    .surface-link:hover { opacity: 1; }
   </style>
 </head>
 <body>
+  <a class="surface-link" href="surface.html">3-D PnL surface →</a>
   <div class="loading" id="loading">
     <div class="spinner"></div>
     <h2>Loading pricer...</h2>
@@ -55,6 +65,7 @@
       "src/hybrid/equity.py",
       "src/hybrid/greeks.py",
       "src/hybrid/products.py",
+      "src/hybrid/surface.py",
     ];
 
     const [appPy, ...sources] = await Promise.all([

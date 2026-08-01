@@ -106,6 +106,43 @@ A "perfectly SPX-delta-hedged" position can lose 25%+ of MTM on a single liquid 
 
 ---
 
+## The PnL surface
+
+![PnL surface](figures/09_pnl_surface_poster.png)
+
+**[→ interactive version](https://johnny-alexander.github.io/hybrid-pricer/surface.html)** · drag to rotate, press play
+
+Two animations of the same short $100mm double digital, built from the closed
+form in `src/hybrid/` and rendered to both a hosted page and an MP4:
+
+| Clip | What moves | What it shows |
+|---|---|---|
+| `media/eqfx_dual_digital_time_decay.mp4` | time to expiry, 6m → 0 | A smooth bivariate-normal ridge collapsing onto the strike/barrier **corner** |
+| `media/eqfx_dual_digital_correlation.mp4` | $\rho$, −0.9 → +0.9 | Spot, vols and time held still — the mark at spot moves $2.5mm → $24.5mm on correlation alone |
+
+The corner is the point. A single-asset digital gives you a *wall*; two
+conditions give you a **vertex**, and the gradient at that vertex is a
+correlation exposure no single-asset book carries. Correlation here is not a
+second-order adjustment — over the plausible range it is a ~10× move in the
+mark on an unchanged market.
+
+Three choices in the rendering are load-bearing rather than cosmetic:
+
+- **Time is spaced geometrically, not linearly.** The width of the transition
+  region scales with $\sigma\sqrt{\tau}$, so linear stepping spends most of the
+  clip on a surface that barely moves and then collapses in three frames.
+  Constant *relative* decay in $\tau$ makes the visible change per frame
+  roughly constant.
+- **The colour neutral is pinned to zero PnL**, not to the middle of the data.
+  On a short digital the range is roughly +20 against −80; an auto-centred
+  scale paints the entire profit plateau in a colour meaning "slightly
+  negative". `cmin`/`cmax` are also frozen across every frame, so the
+  animation cannot lie about magnitude.
+- **Blue/red, not green/red.** Red-green deficiency affects roughly 8% of men,
+  which in a large audience is a meaningful slice of the room.
+
+---
+
 ## Repository layout
 
 ```
@@ -123,11 +160,16 @@ hybrid-pricer/
 │   │   ├── cms.py                   #   CMS convexity adjustment
 │   │   ├── eqir.py                  #   EQ/IR trade + rates-convention risk
 │   │   ├── products.py              #   conditional european, double digital
+│   │   ├── surface.py               #   vectorised (S, X) grids + frame schedules
 │   │   └── greeks.py                #   generic bump-and-revalue
+│   ├── viz/                         # presentation layer (never prices anything)
+│   │   ├── surface3d.py             #   the plotly figure, colour, frames
+│   │   └── scenes.py                #   the two animations, defined once
 │   ├── hybrid_pricer.py             # compatibility shim over src/hybrid
 │   └── trade_config.py              # example trade for scripts/tests
-├── scripts/                         # 8 standalone analysis scripts -> figures/
+├── scripts/                         # 10 standalone analysis scripts -> figures/
 ├── figures/                         # pre-generated PNGs from scripts/
+├── media/                           # rendered MP4s (scripts/10)
 ├── app/
 │   ├── app.py                       # Streamlit pricer (mobile-friendly)
 │   └── MOBILE_DEPLOY.md
@@ -234,6 +276,13 @@ jupyter notebook notebooks/eqir_digital.ipynb
 
 # Standalone scripts (regenerate figures/)
 python scripts/run_all.py
+
+# 3-D PnL surfaces: interactive page + poster still
+python scripts/09_pnl_surface.py
+
+# ...and the same surfaces rendered to MP4 (needs Chrome for kaleido)
+python scripts/10_surface_animation.py
+python scripts/10_surface_animation.py --scene time --scale 2   # 4K, one clip
 
 # Tests
 python -m pytest tests/ -q

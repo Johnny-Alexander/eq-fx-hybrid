@@ -7,3 +7,11 @@ matplotlib>=3.7
 
 # Optional: for running app/app.py (interactive Streamlit pricer)
 streamlit>=1.30
+
+# Optional: for the 3-D PnL surfaces (scripts/09, scripts/10)
+#   plotly         - the figure itself, and the interactive docs/surface.html
+#   kaleido        - headless PNG export; needs a Chrome/Chromium on the box
+#   imageio-ffmpeg - bundled ffmpeg binary, so MP4 export needs no system install
+plotly>=6.0
+kaleido>=1.0
+imageio-ffmpeg>=0.5

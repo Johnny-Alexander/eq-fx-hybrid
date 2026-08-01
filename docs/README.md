@@ -2,6 +2,19 @@
 
 The `docs/` folder is set up to deploy as a static site that runs the pricer **entirely in the browser** via [stlite](https://github.com/whitphx/stlite) (Streamlit compiled to WebAssembly via Pyodide).
 
+Two pages are served:
+
+| Page | What it is | Load |
+|---|---|---|
+| `index.html` | the Streamlit pricer, running client-side under Pyodide | 30–60s first visit |
+| `surface.html` | the 3-D PnL surfaces — pre-computed, plotly only, no Python | ~5 MB, instant |
+
+`surface.html` is **generated** by `python scripts/09_pnl_surface.py`; do not
+hand-edit it. Every animation frame is baked in as data, so the page needs no
+runtime beyond plotly from a CDN — which is why it loads in a second where the
+pricer takes a minute. Regenerate it whenever the trade in
+`src/trade_config.py` or anything in `src/viz/` changes.
+
 ## How it works
 
 - `docs/index.html` — the landing page; loads stlite from a CDN
